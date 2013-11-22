@@ -41,13 +41,17 @@
 
             return {
                 updateData: function updateData() {
-                    var event;
+                    var args = arguments;
 
-                    documentL10n.updateData.apply(documentL10n, arguments);
+                    doOnceOnContextReady(documentL10n, function () {
+                        var event;
 
-                    event = document.createEvent('HTMLEvents');
-                    event.initEvent('l20n:dataupdated', true, true);
-                    document.dispatchEvent(event);
+                        documentL10n.updateData.apply(documentL10n, args);
+
+                        event = document.createEvent('HTMLEvents');
+                        event.initEvent('l20n:dataupdated', true, true);
+                        document.dispatchEvent(event);
+                    });
                 },
             };
         }])
@@ -60,25 +64,45 @@
              * processed by the l10nId directive.
              */
             return function (scope, element, attrs) {
-                attrs.$observe('l20n', function () {
-                    // Remove possible previous listeners
-                    document.removeEventListener('l20n:dataupdated', localizeCurrentNode);
+                function localizeCurrentNode() {
+                    doOnceOnContextReady(documentL10n, function () {
+                        documentL10n.localizeNode(element[0]);
+                    });
+                }
 
+                document.addEventListener('l20n:dataupdated', localizeCurrentNode);
+
+                attrs.$observe('l20n', function () {
                     // Prepare for the l10nId directive.
                     element.attr('data-l10n-id', attrs.l20n);
 
-                    documentL10n.once(function () {
-                        document.addEventListener('l20n:dataupdated', localizeCurrentNode);
-                        localizeCurrentNode();
-                    });
-
-                    function localizeCurrentNode() {
-                        documentL10n.localizeNode(element[0]);
-                    }
+                    localizeCurrentNode();
                 });
             };
         }])
 
         .value('documentL10n', document.l10n); // it's provided as value to be easily mocked in tests
+
+    function doOnceOnContextReady(context, fn) {
+        /**
+         * document.l10n.once waits only for the initial context initialization
+         * and doesn't stop when locale is in the process of being swapped.
+         * Therefore, we need our own implementation of the desired "onceReady".
+         */
+
+        if (context.isReady) {
+            console.log('context ready immediately!');
+            fn();
+            return;
+        }
+
+        function fnWrapped() {
+            context.removeEventListener('ready', fnWrapped);
+            console.log('context ready on the ready event!');
+            fn();
+        }
+
+        context.addEventListener('ready', fnWrapped);
+    }
 
 })();
